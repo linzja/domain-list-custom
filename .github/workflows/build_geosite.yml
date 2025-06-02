@@ -24,7 +24,6 @@ jobs:
           echo "APPLE_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf" >> $GITHUB_ENV
           echo "GAME_DOWNLOAD_CN=https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Game/GameDownloadCN/GameDownloadCN.list" >> $GITHUB_ENV
           echo "STEAM_CN=https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN.list" >> $GITHUB_ENV
-
         shell: bash
 
       - name: Checkout linzja/domain-list-custom
@@ -57,8 +56,8 @@ jobs:
       - name: Create `google-cn`、`apple-cn lists
         run: |
           curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/google-cn
-          curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/apple-cn
-
+          curl -sSL https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/apple-cn
+        
       - name: merge 'steam-cn' and 'game-download-cn' lists
         env:
           SED: grep -Ev 'DOMAIN-KEYWORD' | grep -E 'DOMAIN' | sed -e '/^\s*#/d' -e 's/DOMAIN,/full:/g' -e 's/DOMAIN-SUFFIX,//g' -e 's/DOMAIN-KEYWORD,/keyword:/g' -e 's/DOMAIN-REGEX,/regexp:/g'
@@ -73,7 +72,7 @@ jobs:
         env:
          SED: grep -Ev 'DOMAIN-KEYWORD' | grep -E 'DOMAIN' | sed -e '/^\s*#/d' -e 's/DOMAIN,/full:/g' -e 's/DOMAIN-SUFFIX,//g' -e 's/DOMAIN-KEYWORD,/keyword:/g' -e 's/DOMAIN-REGEX,/regexp:/g'
         run: |
-          rules=(games-cn private ai pt cn ads)
+          rules=(games-cn private ai pt cn ads download)
           for rule in "${rules[@]}"; do
             cat ./domains/${rule}.list | ${{ env.SED }} > ./community/data/${rule}
           done

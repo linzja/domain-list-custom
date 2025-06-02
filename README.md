@@ -130,3 +130,4 @@ fake-ip-filter:
 22 **`cn.list`** 源采用 [v2fly/domain-list-community/cn](https://github.com/v2fly/domain-list-community/blob/master/data/cn)（删除了带有 `@!cn` 和 `@ads` 的域名，并新增了 [v2fly/domain-list-community/geolocation-!cn](https://github.com/v2fly/domain-list-community/blob/master/data/geolocation-!cn) 中带有 `@cn` 的域名）、[blackmatrix7/ios_rule_script/ChinaMax](https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Clash/ChinaMax) 和 [~~felixonmars/dnsmasq-china-list/accelerated-domains.china.conf~~](https://github.com/felixonmars/dnsmasq-china-list/blob/master/accelerated-domains.china.conf) 组合  
 
 
+20 **`download.list`** 源采用 [SukkaW/Surge/ai](https://raw.githubusercontent.com/SukkaW/Surge/refs/heads/master/Source/domainset/download.conf) 组合  
