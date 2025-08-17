@@ -1,0 +1,141 @@
+name: Build rules dat files
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "0 19 * * *"
+  # push:
+  #   branches:
+  #     - master
+  #   paths-ignore:
+  #     - "**/README.md"
+  workflow_run:
+    workflows: ["Build domains"]  # 注意：必须是工作流名字（name），不是文件名
+    types:
+      - completed
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set variables
+        run: |
+          echo "GOAMD64=v3" >> $GITHUB_ENV
+          echo "BUILDTIME=$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')" >> $GITHUB_ENV
+          echo "GOOGLE_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/google.china.conf" >> $GITHUB_ENV
+          echo "APPLE_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf" >> $GITHUB_ENV
+          echo "GAME_DOWNLOAD_CN=https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Game/GameDownloadCN/GameDownloadCN.list" >> $GITHUB_ENV
+          echo "STEAM_CN=https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN.list" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Checkout linzja/domain-list-custom
+        uses: actions/checkout@v5
+        with:
+            repository: linzja/domain-list-custom
+            path: custom
+            fetch-depth: 1
+
+      - name: Checkout linzja/domain-list-custom domains
+        uses: actions/checkout@v5
+        with:
+          repository: linzja/domain-list-custom
+          ref: domains
+          path: domains
+          fetch-depth: 1
+
+      - name: Checkout v2fly/domain-list-community
+        uses: actions/checkout@v5
+        with:
+          repository: v2fly/domain-list-community
+          path: community
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./custom/go.mod
+
+  
+      - name: Create `google-cn`、`apple-cn lists
+        run: |
+          curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/google-cn
+          curl -sSL https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/apple.china.conf | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/apple-cn
+        
+      - name: merge 'steam-cn' and 'game-download-cn' lists
+        env:
+          SED: grep -Ev 'DOMAIN-KEYWORD' | grep -E 'DOMAIN' | sed -e '/^\s*#/d' -e 's/DOMAIN,/full:/g' -e 's/DOMAIN-SUFFIX,//g' -e 's/DOMAIN-KEYWORD,/keyword:/g' -e 's/DOMAIN-REGEX,/regexp:/g'
+        run: |
+          curl -sSL ${STEAM_CN} | ${{ env.SED }} > steamcn.txt
+          while read line; do grep -q "$line @cn" ./community/data/steam || sed -i "/$line/ s/$/ @cn/" ./community/data/steam; done < steamcn.txt
+
+          curl -sSL ${GAME_DOWNLOAD_CN} | ${{ env.SED }} > gamedownloadcn.txt
+          while read line; do grep -q "$line @cn" ./community/data/category-game-platforms-download || sed -i "/$line/ s/$/ @cn/" ./community/data/category-game-platforms-download; done < gamedownloadcn.txt
+
+      - name: copy domains list
+        env:
+         SED: grep -Ev 'DOMAIN-KEYWORD' | grep -E 'DOMAIN' | sed -e '/^\s*#/d' -e 's/DOMAIN,/full:/g' -e 's/DOMAIN-SUFFIX,//g' -e 's/DOMAIN-KEYWORD,/keyword:/g' -e 's/DOMAIN-REGEX,/regexp:/g'
+        run: |
+          rules=(games-cn private ai pt cn ads download)
+          for rule in "${rules[@]}"; do
+            cat ./domains/${rule}.list | ${{ env.SED }} > ./community/data/${rule}
+          done
+          cat ./domains/proxy.list | ${{ env.SED }} > ./community/data/geolocation-\!cn
+
+      - name: Build geosite.dat file
+        run: |
+          cd custom || exit 1
+          go run ./ --datapath=../community/data
+
+      - name: Get geoip.dat relative files
+        run: |
+          wget https://github.com/Loyalsoldier/geoip/raw/release/geoip.dat
+          wget https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb 
+          wget https://raw.githubusercontent.com/xishang0128/geoip/release/GeoLite2-ASN.mmdb
+
+      - name: Move files
+        run: |
+          mkdir -p ./publish/
+          # mkdir -p ./publish/txt
+          install -Dp ./geoip.dat ./publish/
+          install -Dp ./Country.mmdb ./publish/
+          install -Dp ./GeoLite2-ASN.mmdb ./publish/
+          install -Dp ./custom/publish/geosite.dat ./publish/
+          # install -Dp ./custom/publish/*.txt ./publish/txt/
+
+      - name: Release and upload `rule` assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: rule
+          tag: rule
+          overwrite: true
+          body: |
+            规则集文件更新于 ${{ env.BUILDTIME }}
+          file_glob: true
+          file: ./publish/*
+  
+
+      - name: Git push assets to "rule" branch
+        run: |
+          cd publish || exit 1
+          git init
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b rule
+          git add .
+          git commit -m "规则集文件更新于 ${{env.BUILDTIME}}"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin rule
+
+    
+      - name: Purge jsdelivr CDN
+        run: |
+          cd publish || exit 1
+          for file in $(ls); do
+            curl -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@rule/${file}"
+          done
+          
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 3
+          keep_minimum_runs: 1
